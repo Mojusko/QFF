@@ -1,0 +1,19 @@
+## Installation
+First clone the repository:
+
+`git clone https://github.com/Mojusko/QFF.git`
+
+Inside the project directory, run
+
+`pip install -e .`
+
+The `-e` option installs the package in "editable" mode, where pip links to your local copy of the repository, instead of copying the files to the your site-packages directory. That way, a simple `git pull` will update the package.
+The project requires Python 3.6, and the dependencies should be installed with the package.
+
+## Usage
+import 
+x = torch.
+embedding = HermiteEmbedding(gamma=0.5, m=100, d=1, groups=None, approx = "hermite")
+embedding.embed(x)
+
+
