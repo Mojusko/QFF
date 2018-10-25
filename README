@@ -11,9 +11,9 @@ The `-e` option installs the package in "editable" mode, where pip links to your
 The project requires Python 3.6, and the dependencies should be installed with the package.
 
 ## Usage
-import 
-x = torch.
-embedding = HermiteEmbedding(gamma=0.5, m=100, d=1, groups=None, approx = "hermite")
-embedding.embed(x)
+from embedding import *
+x = torch.random(100,1)
+emb = HermiteEmbedding(gamma=0.5, m=100, d=1, groups=None, approx = "hermite")
+emb.embed(x)
 
 
