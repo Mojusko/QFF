@@ -42,7 +42,7 @@ SOFTWARE.
 
 from scipy.stats import norm
 import numpy as np
-import stpy.helper as helper
+import helper
 import torch
 
 class Embedding():
