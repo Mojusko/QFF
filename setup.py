@@ -15,7 +15,7 @@ setup(name='QFF',
           'matplotlib',
           'sklearn',
           'tensorflow',
-          'pytorch'
+          'torch',
           'torchvision',
           'mpmath',
       ])
