@@ -15,17 +15,22 @@ The project requires Python 3.6, and the dependencies should be installed with t
 
 
 ## Usage - Implements Phi(x) 
+```python
 from embedding import *
 x = torch.random(100,1) ## 100 random points in 1D
 emb = HermiteEmbedding(gamma=0.5, m=100, d=1, groups=None, approx = "hermite") # Squared exponential with lenghtscale 0.5 with 100 basis functions 
 Phi = emb.embed(x)
+```
 
 ## Demonstration
-![alt text](example.png "N/A")
+![alt text](https://github.com/Mojusko/QFF/blob/master/example.png "N/A")
 
 RFF of Rahimi & Recht (2007)
+
 Quasi-RFF Avron et. al. (2014) 
+
 Orthogonal RFF - Felix et. al. (2016)
+
 QFF - Mutny & Krause (2018)
 
 
