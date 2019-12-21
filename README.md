@@ -1,3 +1,15 @@
+## Content
+
+This repository includes the code used in paper:
+
+`Mojmir Mutny & Andreas Krause, "Efficient High Dimensional Bayesian Optimization with Additivity and Quadrature Fourier Features", NIPS 2018`
+
+For paper see [here](https://papers.nips.cc/paper/8115-efficient-high-dimensional-bayesian-optimization-with-additivity-and-quadrature-fourier-features).
+Namely, we implement finite basis approximation to Gaussian processes. The main contribution of this paper 
+is implementation of the method embed(x) which coincides with \Phi(x) in product approximation:
+
+	`k(x,y) = \Phi(x)^\top \Phi(y)`
+
 ## Installation
 First clone the repository:
 
@@ -15,6 +27,7 @@ The project requires Python 3.6, and the dependencies should be installed with t
 
 
 ## Usage - Implements Phi(x) 
+
 ```python
 from embedding import *
 x = torch.random(100,1) ## 100 random points in 1D
@@ -25,12 +38,8 @@ Phi = emb.embed(x)
 ## Demonstration
 ![alt text](https://github.com/Mojusko/QFF/blob/master/example.png "N/A")
 
-RFF of Rahimi & Recht (2007)
-
-Quasi-RFF Avron et. al. (2014) 
-
-Orthogonal RFF - Felix et. al. (2016)
-
-QFF - Mutny & Krause (2018)
-
+- RFF of Rahimi & Recht (2007)
+- Quasi-RFF Avron et. al. (2014) 
+- Orthogonal RFF - Felix et. al. (2016)
+- QFF - Mutny & Krause (2018)
 
