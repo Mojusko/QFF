@@ -2,7 +2,7 @@ __author__ = "Mojmir Mutny"
 __copyright__ = "Copyright (c) 2018 Mojmir Mutny, ETH Zurich"
 __credits__ = ["Mojmir Mutny", "Andreas Krause"]
 __license__ = "MIT Licence"
-__version__ = "0.2"
+__version__ = "0.3"
 __email__ = "mojmir.mutny@inf.ethz.ch"
 __status__ = "DEV"
 
@@ -41,8 +41,9 @@ SOFTWARE.
 """
 
 from scipy.stats import norm
+from scipy.stats import chi2, chi
 import numpy as np
-import helper
+import stpy.helper as helper
 import torch
 
 class Embedding():
@@ -51,7 +52,7 @@ class Embedding():
 	"""
 
 	def __init__(self, gamma=0.1, nu=0.5, m=100, d=1, diameter=1.0, groups=None,
-				  kernel="squared_exponential", approx = "rff"):
+				  kernel="squared_exponential", approx = "rff", **kwargs):
 		"""
 		Called to calculate the embedding weights (either via sampling or deterministically)
 
@@ -154,18 +155,28 @@ class RFFEmbedding(Embedding):
 		if self.approx == "rff":
 			if distribution == None:
 				if inv_cum_dist == None:
-					self.W = rejection_sampling(pdf,size = size)
+					self.W = helper.rejection_sampling(pdf,size = size)
 				else:
-					self.W = sample_custom(inv_cum_dist, size=size)
+					self.W = helper.sample_custom(inv_cum_dist, size=size)
 			else:
 				self.W = distribution(size)
 
 		# Quasi Fourier Features
 		elif self.approx == "halton":
 			if inv_cum_dist != None:
-				self.W = sample_qmc_halton(inv_cum_dist, size=size)
+				self.W = helper.sample_qmc_halton(inv_cum_dist, size=size)
 			else:
 				raise AssertionError("Inverse Cumulative Distribution could not be deduced")
+
+		elif self.approx == "orf":
+			distribution = lambda size: np.random.normal(size=size) * (1.)
+			self.W = distribution(size)
+
+			# QR decomposition
+			self.Q,_ = np.linalg.qr(self.W)
+			# df and size
+			self.S = np.diag(chi.rvs(size[1], size=size[0]))
+			self.W = np.dot(self.S,self.Q)/self.gamma**2
 
 		return self.W
 
@@ -175,6 +186,7 @@ class RFFEmbedding(Embedding):
 		"""
 		self.W = self.sampler(size = (self.m,self.d))
 		self.W = torch.from_numpy(self.W)
+
 		if self.biased == True:
 			self.b = 2. * np.pi * np.random.uniform(size=(self.m))
 			self.bs = self.b.reshape(self.m, 1)
@@ -213,7 +225,14 @@ class QuadratureEmbedding(Embedding):
 		self.scale = scale
 		self.compute()
 
-	def compute(self):
+	def reorder_complexity(self,omegas,weights):
+		abs_omegas = np.abs(omegas)
+		order = np.argsort(abs_omegas)
+		new_omegas = omegas[order]
+		new_weights = weights[order]
+		return new_omegas, new_weights
+
+	def compute(self, complexity_reorder = True):
 		"""
 			Computes the tensor grid for Fourier features
 		:return:
@@ -223,11 +242,17 @@ class QuadratureEmbedding(Embedding):
 
 		(omegas, weights) = self.nodesAndWeights(self.q)
 
+		if complexity_reorder == True:
+			(omegas, weights) = self.reorder_complexity(omegas,weights)
+
 		self.weights = helper.cartesian([weights for weight in range(self.d)])
 		self.weights = np.prod(self.weights, axis=1)
 
+
+
 		v = [omegas for omega in range(self.d)]
 		self.W = helper.cartesian(v)
+
 		self.m = self.m * 2
 
 		self.W = torch.from_numpy(self.W)
@@ -272,7 +297,11 @@ class QuadratureEmbedding(Embedding):
 		#omegas = (np.linspace(0, self.q - 1, self.q)) + 1
 		#omegas = omegas * (np.pi / (self.q + 1))
 
-		(omegas, weights) = np.polynomial.legendre.leggauss(q)
+		(omegas, weights) = np.polynomial.legendre.leggauss(2*q)
+
+		omegas = omegas[q:]
+		weights = 2 * weights[q:]
+
 		omegas = ((omegas + 1.) / 2.) * np.pi
 		sine_scale = (1. / (np.sin(omegas) ** 2))
 		omegas = self.scale / np.tan(omegas)
@@ -289,9 +318,46 @@ class QuadratureEmbedding(Embedding):
 		#z = torch.from_numpy(np.zeros(shape=(self.m, times),dtype=x.dtype))
 		z = torch.zeros(self.m,times, dtype = x.dtype)
 		q = torch.mm(self.W[:, 0:d],torch.t(x))
+
 		z[0:int(self.m / 2), :] = torch.sqrt(self.weights.view(-1, 1)) *  torch.cos(q)
 		z[int(self.m / 2):self.m, :] = torch.sqrt(self.weights.view(-1, 1)) *  torch.sin(q)
+
 		return torch.t(z)
+
+	def get_sub_indices(self,group):
+		"""
+		:param group: group part of the embeding to embed
+		:return: embeding of x in group
+		"""
+		m2 = self.m
+		mhalf = int(np.power(self.m // 2, 1. / self.d))
+		m = 2*mhalf
+		mquater = mhalf//2
+		if group == 0 :
+			ind = np.arange(mquater * mhalf, (mquater + 1) * mhalf, 1).tolist() + np.arange(m2 // 2 + (mquater * mhalf),
+																						m2 // 2 + (mquater + 1) * mhalf,
+																						1).tolist()
+			return ind
+		else:
+			ind = np.arange(mquater, m2 // 2, mhalf).tolist() + np.arange(m2 // 2 + mquater, m2, mhalf).tolist()
+			return ind
+
+	def get_sum_sub_indices(self,group):
+
+		# idenitfy unique values
+		arr = self.W[:,group]
+		values = np.unique(arr)
+		# find indices of each unique value
+		ind = []
+		for value in values:
+			ind_inside = []
+			for index,elem in enumerate(arr):
+				if elem == value:
+					ind_inside.append(index)
+			ind.append(ind_inside)
+			ind_inside2 = [i+self.m//2 for i in ind_inside]
+			ind.append(ind_inside2)
+		return ind
 
 class HermiteEmbedding(QuadratureEmbedding):
 	"""
@@ -302,7 +368,6 @@ class HermiteEmbedding(QuadratureEmbedding):
 		QuadratureEmbedding.__init__(self,**kwargs)
 		if self.kernel != "squared_exponential":
 			raise AssertionError("Hermite Embedding is allowed only with Squared Exponential Kernel")
-		#self.compute()
 
 	def nodesAndWeights(self,q):
 		"""
@@ -311,11 +376,14 @@ class HermiteEmbedding(QuadratureEmbedding):
 		:param q: degree of quadrature
 		:return: tuple of (nodes, weights)
 		"""
+		(nodes, weights) = np.polynomial.hermite.hermgauss(2*q)
 
-		(nodes, weights) = np.polynomial.hermite.hermgauss(q)
+		nodes = nodes[q:]
+		weights = 2 * weights[q:]
+
 		nodes = np.sqrt(2) * nodes / self.gamma
-		#weights = np.sqrt(2) * weights / self.gamma
 		weights = weights/np.sqrt(np.pi)
+
 		return (nodes, weights)
 
 
@@ -375,3 +443,45 @@ class KLEmbedding(QuadratureEmbedding):
 	def __init__(self,**kwargs):
 		super().__init__(**kwargs)
 
+class LatticeEmbedding(QuadratureEmbedding):
+	"""
+		Class for standard basis indexed by natural numbers
+	"""
+	def __init__(self,**kwargs):
+		super().__init__(**kwargs)
+		#if self.kernel != "modified_matern" and self.kernel !="laplace":
+		#	raise AssertionError("Matern Embedding is allowed only with Matern Kernel")
+
+	def nodesAndWeights(self,q):
+		"""
+		Compute nodes and weights of the quadrature scheme in 1D
+
+		:param q: degree of quadrature
+		:return: tuple of (nodes, weights)
+		"""
+		nodes = np.arange(1,q+1,1)
+		nodes = np.sqrt(2) * nodes / self.gamma
+		weights = np.ones(q)/(2*q)
+		return (nodes, weights)
+
+
+class AdditiveEmbeddings():
+
+	def __init__(self, embeddings, m, scaling = None, additive = True):
+		self.emebeddings = embeddings
+		if scaling is None:
+			self.scaling = torch.ones(len(self.emebeddings)).double()
+		else:
+			self.scaling = scaling
+		self.additive = additive
+		self.m = m
+		self.no_emb = len(self.emebeddings)
+
+	def embed(self,x):
+		if self.additive:
+			r = torch.zeros(size = (x.size()[0],self.m*self.no_emb)).double()
+			for index,embedding in enumerate(self.emebeddings):
+				r[:,index*self.m:(index+1)*self.m]=embedding.embed(x[:,index].view(-1,1))*self.scaling[index]
+			return r
+		else:
+			pass
